@@ -1,0 +1,20 @@
+{
+    "user_config": {
+        "daily_max": 20,
+        "freq_limit": 30,
+        "send_max": 10
+    },
+    "group_config": {
+        "withdraw": 20,
+        "r18": false,
+        "only_r18": false,
+        "mode": 0
+    },
+    "lolicon": {
+        "pixiv_proxy": false,
+        "r18": false
+    },
+    "proxy": "",
+    "banner": [],
+    "whitelist": []
+}
