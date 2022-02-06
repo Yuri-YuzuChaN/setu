@@ -13,20 +13,25 @@ def b2b64(bytes: bytes) -> str:
     base64_str = 'base64://' + base64.b64encode(bytes).decode()
     return base64_str
 
-async def Img_Download(url: str, pid: int) -> Union[bytes, bool]:
+async def Img_Download(project: str, url: str, pid: int) -> Union[bytes, bool]:
     try:
-        if config.pixiv_proxy:
+        headers = None
+        proxy = None
+        msg = f'Start Downloading Image With Pixiv.re -> PID: {pid}'
+        if project == 'lolicon' and config.lolicon_direct:
             headers = {
                 'referer': f'https://www.pixiv.net/member_illust.php?mode=medium&illust_id={pid}'
             }
-            proxy = config.proxy
+            proxy = config.proxy_url if config.lolicon_proxy else None
             msg = f'Start Downloading Image With Pixiv.net -> PID: {pid}'
-        else:
-            headers = None
-            proxy = None
-            msg = f'Start Downloading Image With Pixiv.re -> PID: {pid}'
+        elif project == 'pixiv' and config.pixiv_direct:
+            headers = {
+                'referer': f'https://www.pixiv.net/member_illust.php?mode=medium&illust_id={pid}'
+            }
+            proxy = config.proxy_url if config.pixiv_proxy else None
+            msg = f'Start Downloading Image With Pixiv.net -> PID: {pid}'
         logger.info(msg)
-        async with aiohttp.ClientSession(headers=headers) as session:
+        async with aiohttp.ClientSession(headers=headers, timeout=10) as session:
             async with session.get(url, proxy=proxy) as req:
                 if req.status != 200:
                     data = False
@@ -34,6 +39,7 @@ async def Img_Download(url: str, pid: int) -> Union[bytes, bool]:
                     data = await req.read()
     except:
         logger.error(traceback.print_exc())
+        data = False
     return data
 
 async def get_random_setu(r18: int, limit: int, mode: int) -> Union[List[MessageSegment], bool]:
@@ -59,9 +65,9 @@ async def get_serach_setu(r18: int, limit: int, keyword: list, mode: int) -> Uni
     return msg
 
 async def img_data(data: Data, mode: int) -> Union[bool, list]:
-    url = data.urls.get('original').replace('i.pixiv.cat', 'i.pixiv.re')
+    url = data.urls['original'].replace('i.pixiv.cat', 'i.pixiv.re')
     if mode != 2:
-        img = await Img_Download(url, data.pid)
+        img = await Img_Download('lolicon', url, data.pid)
         if not img:
             logger.error('Image Download Fail')
             return img

@@ -5,16 +5,31 @@
         "send_max": 10
     },
     "group_config": {
-        "withdraw": 20,
-        "r18": false,
-        "only_r18": false,
+        "lolicon": {
+            "switch": false,
+            "withdraw": 20,
+            "r18": false,
+            "only_r18": false
+        },
+        "pixiv": {
+            "switch": false,
+            "withdraw": 20,
+            "r18": false
+        },
         "mode": 0
     },
     "lolicon": {
-        "pixiv_proxy": false,
+        "pixiv_direct": false,
+        "proxy": false,
         "r18": false
     },
-    "proxy": "",
+    "pixiv": {
+        "pixiv_direct": false,
+        "proxy": false,
+        "access_token": "",
+        "refresh_token": ""
+    },
+    "proxy_url": "http://127.0.0.1:1080",
     "banner": [],
     "whitelist": []
 }
