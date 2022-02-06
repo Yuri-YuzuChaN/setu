@@ -7,7 +7,7 @@
 ## 使用方法
 
 1. 将该项目放在HoshinoBot插件目录 `modules` 下，或者clone本项目 `git clone https://github.com/Yuri-YuzuChaN/setu`
-2. pip以下依赖：`aiohttp`，`traceback`，`pydantics`, `PixivPy-Async`
+2. pip以下依赖：`aiohttp`，`traceback`，`pydantics`, `pixivpy-async[socks]`
 3. 获取 `refresh_token`：https://gist.github.com/ZipFile/c9ebedb224406f4f11845ab700124362
 4. 在 `config.json` 填入 `refresh_token`
 4. 在`config/__bot__.py`模块列表中添加`setu`
