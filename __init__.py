@@ -1,6 +1,5 @@
 from hoshino.config import SUPERUSERS
 from hoshino import priv
-from hoshino.log import new_logger
 from hoshino.service import Service, sucmd
 from hoshino.typing import CQEvent, CommandSession
 from nonebot import NoneBot, on_startup, get_bot
@@ -11,6 +10,7 @@ import asyncio
 from .config import config, pixiv, Group_Config
 from .pixiv_data import *
 from .download import get_random_setu, get_serach_setu
+from .setuerr import SetuDownloadError, SetuLoliconError, SetuPixivError
 
 help = '''[涩图|来份涩图|来两份涩图] 随机涩图
 [搜涩图百合|来两份百合涩图] 搜索关键词的涩图
@@ -66,8 +66,7 @@ susetu [群号] [模块] [值] 修改指定群组配置，模块与setu set指�
 *开启r18需要联系BOT管理员
 *建议将发送模式更改为转发模式，发送多张图片不容易刷屏'''
 
-sv = Service('setu', manage_priv=priv.OWNER, enable_on_default=False, help_=help)
-log = new_logger('setu')
+sv = Service('setu', manage_priv=priv.SUPERUSER, enable_on_default=False, help_=help)
 
 chinese = {'一': 1, '二': 2, '两': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10}
 pixiv_mode = ['day', 'week', 'month', 'day_male', 'day_female', 'week_original', 'day_manga', 'week_rookie']
@@ -79,9 +78,9 @@ freqlimit = config.freqlimit
 async def Pixiv_Login():
     try:
         await pixiv.Login()
-        log.info('Pixiv 登陆成功')
+        sv.logger.info('Pixiv 登陆成功')
     except:
-        log.error('Pixiv 登陆失败')
+        sv.logger.error('Pixiv 登陆失败')
         await get_bot().send_private_msg(user_id=SUPERUSERS[0], message='Pixiv登陆失败')
 
 def TodayLimiter(user_id: int, num: Optional[int] = 1) -> Union[str, bool]:
@@ -98,7 +97,7 @@ def TodayLimiter(user_id: int, num: Optional[int] = 1) -> Union[str, bool]:
         msg = False
     return msg
 
-def forward_msg(info: Optional[List[str]], self_id: Optional[int], img: Optional[bool]) -> list:
+def forward_msg(info: Optional[List[str]], self_id: Optional[int]) -> list:
     forward_msg_list = []
     for _ in info:
         data = {
@@ -106,7 +105,7 @@ def forward_msg(info: Optional[List[str]], self_id: Optional[int], img: Optional
             "data": {
                 "name": "Bot",
                 "uin": str(self_id),
-                "content": (_[0] + '\n' + _[1]) if img else _.strip()
+                "content": (_[0] + '\n' + _[1])
                 }
         }
         forward_msg_list.append(data)
@@ -120,21 +119,22 @@ async def setu_send(bot: NoneBot, ev: CQEvent, img: list, mode: int, withdraw: i
             imglist.append(await bot.send(ev, _[1]))
             await asyncio.sleep(1)
     elif mode == 1:
-        forward_msg_list = forward_msg(img, ev.self_id, True)
+        forward_msg_list = forward_msg(img, ev.self_id)
         try:
             await bot.send_group_forward_msg(group_id=ev.group_id, messages=forward_msg_list)
+            return True
         except:
-            log.error('转发模式发送失败')
-            await bot.finish(ev, '转发模式发送失败，请切换其它发送模式')
-        return
+            sv.logger.error('转发模式发送失败')
+            await bot.send(ev, '转发模式发送失败，请切换其它发送模式')
+            return False
     else:
         for _ in img:
             try:
                 imglist.append(await bot.send(ev, f'[CQ:cardimage,file={_[1]},source={_[0]},icon={_[1]}]'))
             except:
-                log.error('大图模式发送失败')
-                await bot.finish(ev, '大图模式发送失败，请切换其它发送模式')
-                break
+                sv.logger.error('大图模式发送失败')
+                await bot.send(ev, '大图模式发送失败，请切换其它发送模式')
+                return False
             await asyncio.sleep(1)
 
     if withdraw != 0:
@@ -143,36 +143,44 @@ async def setu_send(bot: NoneBot, ev: CQEvent, img: list, mode: int, withdraw: i
             try:
                 await bot.delete_msg(self_id=ev.self_id, message_id=imglist[i]['message_id'])
             except:
-                log.error('涩图撤回失败')
+                sv.logger.error('涩图撤回失败')
             await asyncio.sleep(1)
+    return True
 
 @sv.on_rex(r'^[色涩瑟]图$|^不够[色涩瑟]$|^[色涩瑟]图就这[?？]?$|^[在再]?来?(\d*|\w*)?[点份张][色涩瑟]图$')
 async def random_setu(bot: NoneBot, ev: CQEvent):
-    group_id = ev.group_id
-    user_id = ev.user_id
-    args: Match[str] = ev['match']
-    group = Group_Config(group_id)
-    if not group.lolicon_switch:
-        await bot.finish(ev, '该群未开启lolicon涩图模块', at_sender=True)
-    limit = 1
     try:
-        num = args.group(1)
-        if num in chinese:
-            limit = chinese[num]
-        else:
-            limit = int(num)
-    except:
-        log.info('Pass Num')
-    if limit > config.max:
-        await bot.finish(ev, f'仅允许同时发送{config.max}张', at_sender=True)
-    info = TodayLimiter(user_id, limit)
-    if isinstance(info, str):
-        await bot.finish(ev, info, at_sender=True)
-    img = await get_random_setu(group.r18_num, limit, group.mode)
-    if not img:
-        await bot.finish(ev, '无')
-    dailymax.increase(user_id, limit if group.mode == 1 else len(img))
-    await setu_send(bot, ev, img, group.mode, group.lolicon_withdraw)
+        group_id = ev.group_id
+        user_id = ev.user_id
+        args: Match[str] = ev['match']
+        group = Group_Config(group_id)
+        if not group.lolicon_switch:
+            await bot.finish(ev, '该群未开启lolicon涩图模块', at_sender=True)
+        limit = 1
+        try:
+            num = args.group(1)
+            if num in chinese:
+                limit = chinese[num]
+            else:
+                limit = int(num)
+        except:
+            sv.logger.info('Pass Num')
+        if limit > config.max:
+            await bot.finish(ev, f'仅允许同时发送{config.max}张', at_sender=True)
+        if not priv.check_priv(ev, priv.SUPERUSER):
+            info = TodayLimiter(user_id, limit)
+            if isinstance(info, str):
+                await bot.finish(ev, info, at_sender=True)
+        img = await get_random_setu(group.r18_num, limit, group.mode)
+        if not img:
+            await bot.finish(ev, '无')
+        status = await setu_send(bot, ev, img, group.mode, group.lolicon_withdraw)
+        if status:
+            dailymax.increase(user_id, limit if group.mode == 1 else len(img))
+    except SetuDownloadError as e:
+        await bot.send(ev, e.err)
+    except SetuLoliconError as e:
+        await bot.send(ev, e.err)
 
 def Msg2list(args: str) -> list:
     if ',' in args:
@@ -186,40 +194,47 @@ def Msg2list(args: str) -> list:
 
 @sv.on_rex(r'^[搜来]?(\d*|\w*)?[点份张](.*)[色涩瑟]图$|^搜索?(\d*|\w*)?[点份张]?[色涩瑟]图(.*)$')
 async def serach_setu(bot: NoneBot, ev: CQEvent):
-    group_id = ev.group_id
-    user_id = ev.user_id
-    args: Match[str] = ev['match']
-    group = Group_Config(group_id)
-    if not group.lolicon_switch:
-        await bot.finish(ev, '该群未开启lolicon涩图模块', at_sender=True)
-    limit = 1
     try:
-        num = args.group(1) or args.group(3)
-        if num in chinese:
-            limit = chinese[num]
-        else:
-            limit = int(num)
-    except:
-        log.info('Pass Num')
-    if limit > config.max:
-        await bot.finish(ev, f'仅允许同时发送{config.max}张', at_sender=True)
-    info = TodayLimiter(user_id, limit)
-    if isinstance(info, str):
-        await bot.finish(ev, info, at_sender=True)
-    word = args.group(2) or args.group(4)
-    if not word:
-        await bot.finish(ev, '请输入关键词')
-    keyword = Msg2list(word.strip())
-    await bot.send(ev, '正在搜索涩图...')
-    img = await get_serach_setu(group.r18_num, limit, keyword, group.mode)
-    if isinstance(img, bool):
-        await bot.finish(ev, '未找到涩图')
-    elif isinstance(img, str):
-        await bot.finish(ev, f'error: {img}')
-    elif len(img) != limit:
-        await bot.send(ev, f'找到{len(img)}份该关键词的涩图')
-    dailymax.increase(user_id, limit if group.mode == 1 else len(img))
-    await setu_send(bot, ev, img, group.mode, group.lolicon_withdraw)
+        group_id = ev.group_id
+        user_id = ev.user_id
+        args: Match[str] = ev['match']
+        group = Group_Config(group_id)
+        if not group.lolicon_switch:
+            await bot.finish(ev, '该群未开启lolicon涩图模块', at_sender=True)
+        limit = 1
+        try:
+            num = args.group(1) or args.group(3)
+            if num in chinese:
+                limit = chinese[num]
+            else:
+                limit = int(num)
+        except:
+            sv.logger.info('Pass Num')
+        if limit > config.max:
+            await bot.finish(ev, f'仅允许同时发送{config.max}张', at_sender=True)
+        if not priv.check_priv(ev, priv.SUPERUSER):
+            info = TodayLimiter(user_id, limit)
+            if isinstance(info, str):
+                await bot.finish(ev, info, at_sender=True)
+        word = args.group(2) or args.group(4)
+        if not word:
+            await bot.finish(ev, '请输入关键词')
+        keyword = Msg2list(word.strip())
+        await bot.send(ev, '正在搜索涩图...')
+        img = await get_serach_setu(group.r18_num, limit, keyword, group.mode)
+        if isinstance(img, bool):
+            await bot.finish(ev, '未找到涩图')
+        elif isinstance(img, str):
+            await bot.finish(ev, f'error: {img}')
+        elif len(img) != limit:
+            await bot.send(ev, f'找到{len(img)}份该关键词的涩图')
+        status = await setu_send(bot, ev, img, group.mode, group.lolicon_withdraw)
+        if status:
+            dailymax.increase(user_id, limit if group.mode == 1 else len(img))
+    except SetuDownloadError as e:
+        await bot.send(ev, e.err)
+    except SetuLoliconError as e:
+        await bot.send(ev, e.err)
 
 @sv.on_prefix('pvid')
 async def pixiv_info(bot: NoneBot, ev: CQEvent):
@@ -228,102 +243,123 @@ async def pixiv_info(bot: NoneBot, ev: CQEvent):
     group = Group_Config(group_id)
     if not group.pixiv_switch:
         await bot.finish(ev, '该群未开启Pixiv模块', at_sender=True)
-    info = TodayLimiter(user_id, 1)
-    if isinstance(info, str):
-        await bot.finish(ev, info, at_sender=True)
+    if not priv.check_priv(ev, priv.SUPERUSER):
+        info = TodayLimiter(user_id, 1)
+        if isinstance(info, str):
+            await bot.finish(ev, info, at_sender=True)
     args: str = ev.message.extract_plain_text().strip()
     if args.isdigit():
-        img = await illust_detail(int(args))
+        img = await illust_detail(int(args), group)
     else:
         await bot.finish(ev, 'PID错误', at_sender=True)
-    dailymax.increase(user_id, 1)
-    await setu_send(bot, ev, img, group.mode, group.pixiv_withdraw)
+    status = await setu_send(bot, ev, img, group.mode, group.pixiv_withdraw)
+    if status:
+        dailymax.increase(user_id, 1)
 
 @sv.on_prefix('pvuid')
 async def pixiv_user(bot: NoneBot, ev: CQEvent):
-    group_id = ev.group_id
-    group = Group_Config(group_id)
-    if not group.pixiv_switch:
-        await bot.finish(ev, '该群未开启Pixiv模块', at_sender=True)
-    args: str = ev.message.extract_plain_text().strip()
-    if args.isdigit():
-        img = await user_detail(int(args))
-    else:
-        img = 'UID错误'
-    await bot.send(ev, img, at_sender=True)
+    try:
+        group_id = ev.group_id
+        group = Group_Config(group_id)
+        if not group.pixiv_switch:
+            await bot.finish(ev, '该群未开启Pixiv模块', at_sender=True)
+        args: str = ev.message.extract_plain_text().strip()
+        if args.isdigit():
+            img = await user_detail(int(args))
+        else:
+            img = 'UID错误'
+        await bot.send(ev, img, at_sender=True)
+    except SetuDownloadError as e:
+        await bot.send(ev, e.err)
+    except SetuPixivError as e:
+        await bot.send(ev, e.err)
 
 PVCMD = ['pvimg', 'pvrank', 'pvre']
 
 @sv.on_prefix(PVCMD)
 async def pixiv_user_illust(bot: NoneBot, ev: CQEvent):
-    group_id = ev.group_id
-    user_id = ev.user_id
-    group = Group_Config(group_id)
-    if not group.pixiv_switch:
-        await bot.finish(ev, '该群未开启Pixiv模块', at_sender=True)
-    info = TodayLimiter(user_id, 1)
-    if isinstance(info, str):
-        await bot.finish(ev, info, at_sender=True)
-    args: list[str] = ev.raw_message.strip().split()
-    num = 0
-    if len(args) == 1:
-        await bot.finish(ev, '请携带参数', at_sender=True)
-    elif len(args) == 2:
-        if args[1] in pixiv_mode + r18_mode:
-            if not group.pixiv_r18 and args[1] in r18_mode:
-                await bot.finish(ev, '该群Pixiv模块未开启R18', at_sender=True)
-            id = args[1]
-        elif args[1].isdigit():
-            id = int(args[1])
+    try:
+        group_id = ev.group_id
+        user_id = ev.user_id
+        group = Group_Config(group_id)
+        if not group.pixiv_switch:
+            await bot.finish(ev, '该群未开启Pixiv模块', at_sender=True)
+        if not priv.check_priv(ev, priv.SUPERUSER):
+            info = TodayLimiter(user_id, 1)
+            if isinstance(info, str):
+                await bot.finish(ev, info, at_sender=True)
+        args: list[str] = ev.raw_message.strip().split()
+        num = 0
+        if len(args) == 1:
+            await bot.finish(ev, '请携带参数', at_sender=True)
+        elif len(args) == 2:
+            if args[1] in pixiv_mode + r18_mode:
+                if not group.pixiv_r18 and args[1] in r18_mode:
+                    await bot.finish(ev, '该群Pixiv模块未开启R18', at_sender=True)
+                id = args[1]
+            elif args[1].isdigit():
+                id = int(args[1])
+            else:
+                await bot.finish(ev, '参数错误', at_sender=True)
+        elif len(args) == 3:
+            if args[1] in pixiv_mode and args[2].isdigit():
+                if not group.pixiv_r18 and args[1] in r18_mode:
+                    await bot.finish(ev, '该群Pixiv模块未开启R18', at_sender=True)
+                id = args[1]
+                num = int(args[2])
+            elif args[1].isdigit() and args[2].isdigit():
+                id = int(args[1])
+                num = int(args[2])
+            else:
+                await bot.finish(ev, '参数错误', at_sender=True)
         else:
             await bot.finish(ev, '参数错误', at_sender=True)
-    elif len(args) == 3:
-        if args[1] in pixiv_mode and args[2].isdigit():
-            if not group.pixiv_r18 and args[1] in r18_mode:
-                await bot.finish(ev, '该群Pixiv模块未开启R18', at_sender=True)
-            id = args[1]
-            num = int(args[2])
-        elif args[1].isdigit() and args[2].isdigit():
-            id = int(args[1])
-            num = int(args[2])
+        if args[0] == PVCMD[0]:
+            img = await user_illusts(id, num, group)
+        elif args[0] == PVCMD[1]:
+            img = await illust_ranking(id, num, group)
         else:
-            await bot.finish(ev, '参数错误', at_sender=True)
-    else:
-        await bot.finish(ev, '参数错误', at_sender=True)
-    if args[0] == PVCMD[0]:
-        img = await user_illusts(id, num)
-    elif args[0] == PVCMD[1]:
-        img = await illust_ranking(id, num)
-    else:
-        img = await illust_related(id, num)
-    if not isinstance(img, list):
-        await bot.send(ev, img, at_sender=True)
-    else:
-        dailymax.increase(user_id, 1)
-        await setu_send(bot, ev, img, group.mode, group.pixiv_withdraw)
+            img = await illust_related(id, num, group)
+        if not isinstance(img, list):
+            await bot.send(ev, img, at_sender=True)
+        else:
+            status = await setu_send(bot, ev, img, group.mode, group.pixiv_withdraw)
+            if status:
+                dailymax.increase(user_id, 1)
+    except SetuDownloadError as e:
+        await bot.send(ev, e.err)
+    except SetuPixivError as e:
+        await bot.send(ev, e.err)
 
 @sv.on_prefix('pvse')
 async def pixiv_search(bot: NoneBot, ev: CQEvent):
-    group_id = ev.group_id
-    user_id = ev.user_id
-    group = Group_Config(group_id)
-    if not group.pixiv_switch:
-        await bot.finish(ev, '该群未开启Pixiv模块', at_sender=True)
-    info = TodayLimiter(user_id, 1)
-    if isinstance(info, str):
-        await bot.finish(ev, info, at_sender=True)
-    args: list[str] = ev.message.extract_plain_text().strip().split()
-    if not args:
-        img = '请携带参数'
-    elif len(args) == 1:
-        img = await search_illusts(args[0])
-    elif len(args) == 2 and args[1] in ['day', 'week', 'month']:
-        duration = f'within_last_{args[1]}'
-        img = await search_illusts(args[0], duration)
-    else:
-        img = '参数错误'
-    dailymax.increase(user_id, 1)
-    await setu_send(bot, ev, img, group.mode, group.pixiv_withdraw)
+    try:
+        group_id = ev.group_id
+        user_id = ev.user_id
+        group = Group_Config(group_id)
+        if not group.pixiv_switch:
+            await bot.finish(ev, '该群未开启Pixiv模块', at_sender=True)
+        if not priv.check_priv(ev, priv.SUPERUSER):
+            info = TodayLimiter(user_id, 1)
+            if isinstance(info, str):
+                await bot.finish(ev, info, at_sender=True)
+        args: list[str] = ev.message.extract_plain_text().strip().split()
+        if not args:
+            img = '请携带参数'
+        elif len(args) == 1:
+            img = await search_illusts(args[0], group=group)
+        elif len(args) == 2 and args[1] in ['day', 'week', 'month']:
+            duration = f'within_last_{args[1]}'
+            img = await search_illusts(args[0], duration, group)
+        else:
+            img = '参数错误'
+        status = await setu_send(bot, ev, img, group.mode, group.pixiv_withdraw)
+        if status:
+            dailymax.increase(user_id, 1)
+    except SetuDownloadError as e:
+        await bot.send(ev, e.err)
+    except SetuPixivError as e:
+        await bot.send(ev, e.err)
 
 def args2data(args: str) -> Union[int, bool, str]:
     try:
@@ -348,7 +384,7 @@ async def change_config(bot: NoneBot, ev: CQEvent):
     if not args:
         msg = '指令错误，请输入参数'
     elif args[0] == 'help':
-        forward_msg_list = forward_msg(help.split('----------------------'), ev.self_id, False)
+        forward_msg_list = forward_msg(help[:-3].split('----------------------'), ev.self_id, False)
         await bot.send_group_forward_msg(group_id=ev.group_id, messages=forward_msg_list)
         return
     elif args[0] == 'me':
@@ -479,10 +515,10 @@ async def superuser_setu(session: CommandSession):
     if group_id not in gl:
         await session.finish(f'未找到群组: {group_id}')
     group_info = await session.bot.get_group_info(group_id=group_id)
-    if not args[3].isdigit():
-        data = bool(args[3] == 'on')
+    if not args[2].isdigit():
+        data = bool(args[2] == 'on')
     else:
-        data = int(args[3])
-    group.set_group_config(args[1], args[2], data)
+        data = int(args[2])
+    group.set_group_config(args[1], None if args[1] == 'mode' else args[2], data)
     await session.bot.send_group_msg(group_id=group_id, message=f'已将该群模块 [{args[1]}] 修改为 [{data}]')
     await session.send(f'已成功将群：{group_info["group_name"]}({group_id})\n模块 [{args[1]}] 修改为 [{data}]')

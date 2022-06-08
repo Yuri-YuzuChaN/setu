@@ -61,7 +61,7 @@ class FreqLimiter:
         return self.next_time[key] - time.time()
 
     def update_time(self, key: int):
-        self. default_cd = key
+        self.default_cd = key
 
 class Config:
 
@@ -72,13 +72,9 @@ class Config:
         '''加载全局配置'''
         self.config: dict[str, Union[dict[str, Union[int, bool]], list[int]]] = json.load(open(self.config_json, 'r', encoding='utf-8'))
         self.group_config: dict[str, Union[dict[str, Union[int, bool]], int]] = json.load(open(self.group_json, 'r', encoding='utf-8'))
-
-        self.user_config = self.config['user_config']
-        self.lolicon = self.config['lolicon']
-        self.pixiv = self.config['pixiv']
         
-        self.dailymax = DailyNumberLimiter(self.user_config['daily_max'])
-        self.freqlimit = FreqLimiter(self.user_config['freq_limit'])
+        self.dailymax = DailyNumberLimiter(self.config['user_config']['daily_max'])
+        self.freqlimit = FreqLimiter(self.config['user_config']['freq_limit'])
 
     def set_config(self, project: str, item: str, data: Union[str, int, bool]) -> str:
         '''修改全局配置'''
@@ -101,11 +97,11 @@ class Config:
 
     def new_dailymax(self):
         '''更新当天最高次数'''
-        self.dailymax.update_max(self.user_config['daily_max'])
+        self.dailymax.update_max(self.config['user_config']['daily_max'])
 
     def new_freqlimit(self):
         '''更新发送冷却时间'''
-        self.freqlimit.update_time(self.user_config['freq_limit'])
+        self.freqlimit.update_time(self.config['user_config']['freq_limit'])
 
     def save_config(self, file: str, data: Any):
         '''保存配置'''
@@ -160,47 +156,47 @@ class Config:
     @property
     def daily(self) -> int:
         '''每日上限'''
-        return self.user_config['daily_max']
+        return self.config['user_config']['daily_max']
 
     @property
     def freq(self) -> int:
         '''发送冷却时间'''
-        return self.user_config['freq_limit']
+        return self.config['user_config']['freq_limit']
 
     @property
     def max(self) -> int:
         '''单此发送上限'''
-        return self.user_config['send_max']
+        return self.config['user_config']['send_max']
 
     @property
     def r18(self) -> bool:
         '''全局r18'''
-        return self.lolicon['r18']
+        return self.config['lolicon']['r18']
 
     @property
     def lolicon_direct(self) -> bool:
         '''lolicon pixiv开关'''
-        return self.lolicon['pixiv_direct']
+        return self.config['lolicon']['pixiv_direct']
 
     @property
     def lolicon_proxy(self) -> bool:
         '''lolicon代理开关'''
-        return self.lolicon['proxy']
+        return self.config['lolicon']['proxy']
 
     @property
     def pixiv_direct(self) -> bool:
         '''pixiv 原生地址开关'''
-        return self.pixiv['pixiv_direct']
+        return self.config['pixiv']['pixiv_direct']
 
     @property
     def pixiv_proxy(self) -> bool:
         '''pixiv代理开关'''
-        return self.pixiv['proxy']
+        return self.config['pixiv']['proxy']
 
     @property
     def token(self) -> str:
         '''pixiv Token'''
-        return self.pixiv['refresh_token']
+        return self.config['pixiv']['refresh_token']
 
     @property
     def proxy_url(self) -> str:
