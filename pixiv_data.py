@@ -27,10 +27,17 @@ async def pixiv_img(info: dict, group: Group_Config) -> Union[List[str], str]:
 Author: {user.name}
 Title: {data.title}
 Tags: {' | '.join(tags)}'''
+<<<<<<< HEAD
         result = [[msg, setu]]
     else:
         result = [data.id, url]
     return result
+=======
+        result = [msg, setu]
+    else:
+        result = [data.id, url]
+    return [result]
+>>>>>>> 8e1abf349bed9cf522b13ca9101c7074f751d49e
 
 async def illust_detail(pid: int, group: Group_Config) -> list:
     info = await pixiv.aapi.illust_detail(pid)
