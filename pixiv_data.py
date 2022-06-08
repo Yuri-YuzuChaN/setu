@@ -18,16 +18,18 @@ async def pixiv_img(info: dict, group: Group_Config) -> Union[List[str], str]:
         url = data.meta_single_page['original_image_url'].replace('i.pximg.net', 'i.pixiv.re')
     else:
         url = data.meta_pages[0]['image_urls']['original'].replace('i.pximg.net', 'i.pixiv.re')
-    img = await Img_Download('pixiv', url, data.id)
-    imgb64 = b2b64(img)
-    setu = MessageSegment.image(imgb64)
-    tags = [i['name'] for i in data.tags]
-    msg = f'''{setu}
-Pid: {data.id}
+    if group.mode != 2:
+        img = await Img_Download('pixiv', url, data.id)
+        imgb64 = b2b64(img)
+        setu = MessageSegment.image(imgb64)
+        tags = [i['name'] for i in data.tags]
+        msg = f'''Pid: {data.id}
 Author: {user.name}
 Title: {data.title}
 Tags: {' | '.join(tags)}'''
-    result = [msg, setu]
+        result = [[msg, setu]]
+    else:
+        result = [data.id, url]
     return result
 
 async def illust_detail(pid: int, group: Group_Config) -> list:
@@ -55,7 +57,7 @@ async def user_detail(uid: int) -> str:
         url = data.profile_image_urls['medium'].replace('i.pximg.net', 'i.pixiv.re')
         setu = MessageSegment.image(url)
         msg = f'''{setu}
-Id: {data.id}
+ID: {data.id}
 Name: {data.name}'''
     return msg
 
@@ -102,10 +104,7 @@ async def illust_ranking(mode: str, num: int = 0, group: Group_Config = ...) -> 
         else:
             msg = '未知'
     else:
-        if num != 0:
-            rdnum = num - 1
-        else:
-            rdnum = random.randint(0, len(info['illusts']))
+        rdnum = num - 1 if num != 0 else random.randint(0, len(info['illusts']))
         msg = await pixiv_img(info['illusts'][rdnum], group)
     return msg
 

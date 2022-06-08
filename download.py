@@ -5,6 +5,7 @@ import base64, aiohttp, traceback
 
 from .data import Data
 from .config import config
+from .setuerr import SetuDownloadError, SetuLoliconError
 from .api import Get_Random_Imginfo, Get_Imginfo
 
 logger = new_logger('setu_download')
@@ -31,22 +32,18 @@ async def Img_Download(project: str, url: str, pid: int) -> Union[bytes, bool]:
             proxy = config.proxy_url if config.pixiv_proxy else None
             msg = f'Start Downloading Image With Pixiv.net -> PID: {pid}'
         logger.info(msg)
-        async with aiohttp.ClientSession(headers=headers, timeout=10) as session:
-            async with session.get(url, proxy=proxy) as req:
-                if req.status != 200:
-                    data = False
-                else:
-                    data = await req.read()
+        async with aiohttp.request('GET', url, headers=headers, proxy=proxy) as req:
+            data = await req.read() if req.status == 200 else False
+        return data
     except:
-        logger.error(traceback.print_exc())
-        data = False
-    return data
+        logger.error(traceback.format_exc())
+        raise SetuDownloadError
 
 async def get_random_setu(r18: int, limit: int, mode: int) -> Union[List[MessageSegment], bool]:
     msg: list[MessageSegment] = []
     setu = await Get_Random_Imginfo(r18, limit)
     if setu['error']:
-        return setu['error']
+        raise SetuLoliconError('-1')
     elif not setu['data']:
         return False
     for data in setu['data']:
@@ -57,26 +54,24 @@ async def get_serach_setu(r18: int, limit: int, keyword: list, mode: int) -> Uni
     msg: list[MessageSegment] = []
     setu = await Get_Imginfo(r18, keyword, limit)
     if setu['error']:
-        return setu['error']
+        raise SetuLoliconError('-1')
     elif not setu['data']:
-        return False
+        raise SetuLoliconError('-3')
     for data in setu['data']:
-        msg.append(await img_data(Data(**data), mode))
+        setuinfo = await img_data(Data(**data), mode)
+        msg.append(setuinfo)
     return msg
 
-async def img_data(data: Data, mode: int) -> Union[bool, list]:
+async def img_data(data: Data, mode: int) -> Union[bool, list, str]:
     url = data.urls['original'].replace('i.pixiv.cat', 'i.pixiv.re')
     if mode != 2:
         img = await Img_Download('lolicon', url, data.pid)
-        if not img:
-            logger.error('Image Download Fail')
-            return img
         imgb64 = b2b64(img)
         msg = f'''Title: {data.title}
 Author: {data.author}
 PixivID: {data.pid}'''
         setu = MessageSegment.image(imgb64)
-        data = [msg, setu]
+        setuinfo = [msg, setu]
     else:
-        data = [data.pid, url]
-    return data
+        setuinfo = [data.pid, url]
+    return setuinfo
